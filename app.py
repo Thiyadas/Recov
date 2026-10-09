@@ -270,7 +270,7 @@ def generate_lsa_pdf(reinsurer_full_name, layer_name, amount_paid, loss_gross_re
 # =========================================================
 # Step 1: อัปโหลด Original Data
 # =========================================================
-st.header("📌 Step 1: อัปโหลดไฟล์ Original Data (ไฟล์ 1)")
+st.header(" Step 1: อัปโหลดไฟล์ Original Data")
 uploaded_file = st.file_uploader("เลือกไฟล์ Original Data (.xlsx)", type=["xlsx"])
 
 if uploaded_file:
@@ -359,7 +359,7 @@ if uploaded_file:
     # Step 2: สรุปผล ตรวจสอบ และปุ่มแก้ไข / ยืนยันไฟล์ 2 & 3
     # =========================================================
     st.markdown("---")
-    st.header("📌 Step 2: สรุปผล ตรวจสอบ และแก้ไขไฟล์ 2 & ไฟล์ 3")
+    st.header(" Step 2: สรุปผล  Bordereaux claim & Summary และ ตรวจสอบความถูกต้อง")
     
     col1, col2 = st.columns(2)
     col1.metric("Total Gross (Settle + Reserve)", f"{tot_gross_all:,.2f}")
@@ -425,7 +425,7 @@ if uploaded_file:
     # =========================================================
     if st.session_state.is_approved:
         st.markdown("---")
-        st.header("📌 Step 3: สร้างเอกสาร LSA & PLA และแปลงเป็น PDF")
+        st.header(" Step 3: สร้างเอกสาร LSA & PLA และแปลงเป็น PDF")
         
         st.info("💡 เมื่ออนุมัติเรียบร้อย ระบบจะทำการสร้างเอกสารทั้ง PLA และ LSA PDF ของทุกบริษัทแยกตาม Layer ออกมารวมเป็นไฟล์ ZIP เดียวกัน")
 
