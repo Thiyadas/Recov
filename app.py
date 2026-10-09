@@ -65,7 +65,7 @@ def calculate_layer_payout(net_loss, limit, excess_point):
     return min(net_loss - excess_point, limit)
 
 # ---------------------------------------------------------
-# PDF Generator Function (สร้างใบ PLA PDF พร้อมโลโก้บริษัท)
+# PDF Generator 1: PLA (Preliminary Loss Advice)
 # ---------------------------------------------------------
 def generate_pla_pdf(reinsurer_full_name, layer_name, gross_loss, net_loss, excess_pt, layer_limit, reinsurer_share_amt, event_no="E2026-0005"):
     buffer = io.BytesIO()
@@ -84,7 +84,7 @@ def generate_pla_pdf(reinsurer_full_name, layer_name, gross_loss, net_loss, exce
 
     elements = []
 
-    # 1. Header with Logo (การใส่โลโก้บริษัท)
+    # Header with Logo
     company_text = [
         Paragraph("DHIPAYA INSURANCE PUBLIC COMPANY LIMITED", style_company),
         Paragraph("HEAD OFFICE ADDRESS :- 115 RAMA 3 ROAD, Chong Nonsi, Yannawa, Bangkok 10120", style_addr),
@@ -111,18 +111,18 @@ def generate_pla_pdf(reinsurer_full_name, layer_name, gross_loss, net_loss, exce
     elements.append(Spacer(1, 8))
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.black, spaceAfter=10))
 
-    # 2. Contract & Document Title
+    # Contract & Document Title
     elements.append(Paragraph(f"Fire XL-{layer_name} 2025", style_title))
     elements.append(Paragraph("PRELIMINARY LOSS ADVICE", style_subtitle))
     elements.append(Spacer(1, 12))
 
-    # 3. To Reinsurer Section
+    # To Reinsurer Section
     elements.append(Paragraph(f"<b>To:</b> {reinsurer_full_name}", style_normal))
     elements.append(Paragraph("Dear Sirs,", style_normal))
     elements.append(Paragraph("We regret to inform you that we have received the loss advice from the claimant as per following detail.", style_normal))
     elements.append(Spacer(1, 10))
 
-    # 4. Claim Details Table
+    # Claim Details Table
     data_table = [
         [Paragraph("<b>CLAIM NO.</b>", style_normal), Paragraph(": Please see Attachment", style_normal)],
         [Paragraph("<b>POLICY NO.</b>", style_normal), Paragraph(": Please see Attachment", style_normal)],
@@ -148,13 +148,113 @@ def generate_pla_pdf(reinsurer_full_name, layer_name, gross_loss, net_loss, exce
     elements.append(t)
     elements.append(Spacer(1, 15))
 
-    # 5. Event & Dates
     today_str = datetime.now().strftime("%d/%m/%Y")
     elements.append(Paragraph(f"<b>Date:</b> {today_str}", style_normal))
     elements.append(Paragraph(f"<b>EVENT NO.:</b> {event_no}", style_normal))
     elements.append(Spacer(1, 10))
 
-    # 6. Footer Notice
+    elements.append(Paragraph("Kindly reserve the above captioned amount pending for further advice of each call from us.", style_normal))
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph("<i>This is a computer print out, therefore no signature is required.</i>", style_normal))
+    elements.append(Spacer(1, 10))
+    elements.append(Paragraph("Please Sign and return copy here of", style_normal))
+    elements.append(Spacer(1, 10))
+    elements.append(Paragraph("Handled by: Reinsurance Department", style_normal))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+# ---------------------------------------------------------
+# PDF Generator 2: LSA (Loss Settlement Advice - Cash Call)
+# ---------------------------------------------------------
+def generate_lsa_pdf(reinsurer_full_name, layer_name, amount_paid, loss_gross_retention, excess_pt, loss_under_xol, reinsurer_share_amt, event_no="E2026-0005"):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36
+    )
+    styles = getSampleStyleSheet()
+    
+    style_company = ParagraphStyle('Company', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11, leading=13, alignment=0)
+    style_addr = ParagraphStyle('Addr', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10, alignment=0)
+    style_title = ParagraphStyle('Title', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, leading=14, alignment=1)
+    style_subtitle = ParagraphStyle('SubTitle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11, leading=13, alignment=1)
+    style_normal = ParagraphStyle('Norm', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=12)
+    style_bold = ParagraphStyle('Bold', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, leading=12)
+
+    elements = []
+
+    # Header with Logo
+    company_text = [
+        Paragraph("DHIPAYA INSURANCE PUBLIC COMPANY LIMITED", style_company),
+        Paragraph("HEAD OFFICE ADDRESS :- 115 RAMA 3 ROAD, Chong Nonsi, Yannawa, Bangkok 10120", style_addr),
+        Paragraph("TEL. 1736, 0 2239 2200", style_addr)
+    ]
+
+    if os.path.exists(LOGO_FILENAME):
+        try:
+            img = Image(LOGO_FILENAME, width=65, height=65)
+            header_table = Table([[img, company_text]], colWidths=[75, 445])
+            header_table.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('LEFTPADDING', (0,0), (-1,-1), 0),
+                ('RIGHTPADDING', (0,0), (-1,-1), 0),
+            ]))
+            elements.append(header_table)
+        except Exception:
+            elements.append(Paragraph("DHIPAYA INSURANCE PUBLIC COMPANY LIMITED", style_company))
+            elements.append(Paragraph("HEAD OFFICE ADDRESS :- 115 RAMA 3 ROAD, Chong Nonsi, Yannawa, Bangkok 10120 | TEL. 1736, 0 2239 2200", style_addr))
+    else:
+        elements.append(Paragraph("DHIPAYA INSURANCE PUBLIC COMPANY LIMITED", style_company))
+        elements.append(Paragraph("HEAD OFFICE ADDRESS :- 115 RAMA 3 ROAD, Chong Nonsi, Yannawa, Bangkok 10120 | TEL. 1736, 0 2239 2200", style_addr))
+
+    elements.append(Spacer(1, 8))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.black, spaceAfter=10))
+
+    # Contract & Document Title Specific to LSA
+    elements.append(Paragraph(f"Fire XL-{layer_name} 2025", style_title))
+    elements.append(Paragraph('"Cash Call" Loss Settlement Advice (1 Interim Payment)', style_subtitle))
+    elements.append(Spacer(1, 12))
+
+    # To Reinsurer Section
+    elements.append(Paragraph(f"<b>To:</b> {reinsurer_full_name}", style_normal))
+    elements.append(Paragraph("Dear Sirs,", style_normal))
+    elements.append(Paragraph("We regret to inform you that we have received the loss advice from the claimant as per following detail.", style_normal))
+    elements.append(Spacer(1, 10))
+
+    # LSA Field Mapping Structure
+    data_table = [
+        [Paragraph("<b>CLAIM NO.</b>", style_normal), Paragraph(": Please see Attachment", style_normal)],
+        [Paragraph("<b>POLICY NO.</b>", style_normal), Paragraph(": Please see Attachment", style_normal)],
+        [Paragraph("<b>INSURED</b>", style_normal), Paragraph(": Please see Attachment", style_normal)],
+        [Paragraph("<b>LOCATION</b>", style_normal), Paragraph(": Please see Attachment", style_normal)],
+        [Paragraph("<b>NATURE OF LOSS</b>", style_normal), Paragraph(": Flood 2025", style_normal)],
+        [Paragraph("<b>DATE OF LOSS</b>", style_normal), Paragraph(": 19/11/2025-30/11/2025", style_normal)],
+        [Paragraph("<b>SUM INSURED (100%)</b>", style_normal), Paragraph(": Please see Attachment", style_normal)],
+        [Paragraph("<b>OUR GROSS RETENTION</b>", style_normal), Paragraph(": Please see Attachment", style_normal)],
+        [Paragraph("<b>AMOUNT PAID</b>", style_normal), Paragraph(f": BHT. {amount_paid:,.2f}", style_normal)],
+        [Paragraph("<b>LOSS OF GROSS RETENTION</b>", style_normal), Paragraph(f": BHT. {loss_gross_retention:,.2f}", style_normal)],
+        [Paragraph("<b>EXCESS POINT</b>", style_normal), Paragraph(f": BHT. {excess_pt:,.2f}", style_normal)],
+        [Paragraph("<b>LOSS UNDER XOL TREATY</b>", style_normal), Paragraph(f": BHT. {loss_under_xol:,.2f}", style_normal)],
+        [Paragraph("<b>YOUR SHARE OF LOSS</b>", style_bold), Paragraph(f": <b>BHT. {reinsurer_share_amt:,.2f} ({layer_name})</b>", style_bold)],
+        [Paragraph("<b>STATUS</b>", style_normal), Paragraph(": PENDING", style_normal)],
+    ]
+
+    t = Table(data_table, colWidths=[200, 320])
+    t.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 15))
+
+    today_str = datetime.now().strftime("%d/%m/%Y")
+    elements.append(Paragraph(f"<b>Date:</b> {today_str}", style_normal))
+    elements.append(Paragraph(f"<b>EVENT NO.:</b> {event_no}", style_normal))
+    elements.append(Spacer(1, 10))
+
     elements.append(Paragraph("Kindly reserve the above captioned amount pending for further advice of each call from us.", style_normal))
     elements.append(Spacer(1, 20))
     elements.append(Paragraph("<i>This is a computer print out, therefore no signature is required.</i>", style_normal))
@@ -255,7 +355,7 @@ if uploaded_file:
     tot_gross_all = tot_sg + tot_rg
     tot_net_all = tot_sn + tot_rn
 
-  # =========================================================
+    # =========================================================
     # Step 2: สรุปผล ตรวจสอบ และปุ่มแก้ไข / ยืนยันไฟล์ 2 & 3
     # =========================================================
     st.markdown("---")
@@ -311,13 +411,11 @@ if uploaded_file:
     col_btn1, col_btn2 = st.columns(2)
     
     with col_btn1:
-        # ปุ่มสำหรับโหมดแก้ไข
         if st.checkbox("✏️ แก้ไขไฟล์ไฟนอล (หากต้องการปรับแก้ตัวเลขก่อนไปทำ PDF)"):
-            st.warning("⚠️ คุณสามารถอัปโหลดไฟล์ 2 / 3 ที่แก้ไขแล้ว หรือปรับแก้ตารางสรุปด้านล่าง:")
+            st.warning("⚠️ คุณสามารถปรับแก้ตารางสรุปข้อมูลด้านล่างนี้ได้โดยตรงก่อนกดยืนยัน:")
             df_summary_layer = st.data_editor(df_summary_layer, num_rows="dynamic", key="editor_layer")
 
     with col_btn2:
-        # ปุ่มอนุมัติและยืนยันข้อมูล
         if st.button("✅ ตรวจสอบถูกต้อง (Confirm Data)"):
             st.session_state.is_approved = True
             st.success("🎉 อนุมัติข้อมูลไฟล์ 2 & 3 เรียบร้อยแล้ว! สามารถดำเนินการออก PDF ได้ใน Step ถัดไป")
@@ -347,7 +445,7 @@ if uploaded_file:
                             rein_share_amt = under_xl * rein_val["share"]
                             safe_rein_name = re.sub(r'[^a-zA-Z0-9]', '_', rein_key)
                             
-                            # 1. สร้าง PLA PDF
+                            # 1. สร้าง PLA PDF (Preliminary Loss Advice)
                             pdf_pla_bytes = generate_pla_pdf(
                                 reinsurer_full_name=rein_full_name,
                                 layer_name=layer_name,
@@ -358,32 +456,4 @@ if uploaded_file:
                                 reinsurer_share_amt=rein_share_amt
                             )
                             pla_filename = f"PLA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
-                            zip_file.writestr(pla_filename, pdf_pla_bytes)
-
-                            # 2. สร้าง LSA PDF (เรียกฟังก์ชันสร้าง LSA หรือเรียก generate_lsa_pdf ที่สร้างไว้ในขั้นตอนที่ 1)
-                            # หากยังไม่มีฟังก์ชัน generate_lsa_pdf สามารถเรียก generate_pla_pdf แก้ขัดก่อนได้
-                            try:
-                                pdf_lsa_bytes = generate_lsa_pdf(
-                                    reinsurer_full_name=rein_full_name,
-                                    layer_name=layer_name,
-                                    gross_loss=tot_gross_all,
-                                    net_loss=tot_net_all,
-                                    excess_pt=excess_pt,
-                                    layer_limit=limit,
-                                    reinsurer_share_amt=rein_share_amt
-                                )
-                            except NameError:
-                                # Fallback กรณีที่ยังไม่ได้ประกาศฟังก์ชัน generate_lsa_pdf
-                                pdf_lsa_bytes = pdf_pla_bytes
-
-                            lsa_filename = f"LSA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
-                            zip_file.writestr(lsa_filename, pdf_lsa_bytes)
-
-            zip_buffer.seek(0)
-            st.success("✅ สร้างไฟล์ PDF (ทั้ง PLA และ LSA) ของทุกบริษัทสำเร็จเรียบร้อยแล้ว!")
-            st.download_button(
-                label="📦 ดาวน์โหลดเอกสาร PDF ทั้งหมด (PLA + LSA ZIP)",
-                data=zip_buffer.getvalue(),
-                file_name="PLA_and_LSA_Notices_All_Reinsurers.zip",
-                mime="application/zip"
-            )
+                            zip_file.writestr(
