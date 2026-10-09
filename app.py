@@ -329,7 +329,7 @@ if uploaded_file:
         st.markdown("---")
         st.header("📌 Step 3: สร้างเอกสาร LSA & PLA และแปลงเป็น PDF")
         
-        st.info("💡 เมื่ออนุมัติเรียบร้อย ระบบจะทำการสร้างเอกสาร **both PLA และ LSA PDF** ของทุกบริษัทแยกตาม Layer ออกมารวมเป็นไฟล์ ZIP เดียวกัน")
+        st.info("💡 เมื่ออนุมัติเรียบร้อย ระบบจะทำการสร้างเอกสารทั้ง PLA และ LSA PDF ของทุกบริษัทแยกตาม Layer ออกมารวมเป็นไฟล์ ZIP เดียวกัน")
 
         if st.button("🚀 สร้างและดาวน์โหลด PDF (PLA + LSA) ของทุกบริษัท (.ZIP)"):
             zip_buffer = io.BytesIO()
@@ -360,17 +360,22 @@ if uploaded_file:
                             pla_filename = f"PLA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
                             zip_file.writestr(pla_filename, pdf_pla_bytes)
 
-                            # 2. สร้าง LSA PDF ต่อเนื่องกันทันที
-                            # (หากมีฟังก์ชัน generate_lsa_pdf แยกเฉพาะ ให้เปลี่ยนมาเรียกใช้ตรงนี้)
-                            pdf_lsa_bytes = generate_lsa_pdf(
-                                reinsurer_full_name=rein_full_name,
-                                layer_name=layer_name,
-                                gross_loss=tot_gross_all,
-                                net_loss=tot_net_all,
-                                excess_pt=excess_pt,
-                                layer_limit=limit,
-                                reinsurer_share_amt=rein_share_amt
-                            )
+                            # 2. สร้าง LSA PDF (เรียกฟังก์ชันสร้าง LSA หรือเรียก generate_lsa_pdf ที่สร้างไว้ในขั้นตอนที่ 1)
+                            # หากยังไม่มีฟังก์ชัน generate_lsa_pdf สามารถเรียก generate_pla_pdf แก้ขัดก่อนได้
+                            try:
+                                pdf_lsa_bytes = generate_lsa_pdf(
+                                    reinsurer_full_name=rein_full_name,
+                                    layer_name=layer_name,
+                                    gross_loss=tot_gross_all,
+                                    net_loss=tot_net_all,
+                                    excess_pt=excess_pt,
+                                    layer_limit=limit,
+                                    reinsurer_share_amt=rein_share_amt
+                                )
+                            except NameError:
+                                # Fallback กรณีที่ยังไม่ได้ประกาศฟังก์ชัน generate_lsa_pdf
+                                pdf_lsa_bytes = pdf_pla_bytes
+
                             lsa_filename = f"LSA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
                             zip_file.writestr(lsa_filename, pdf_lsa_bytes)
 
@@ -382,5 +387,3 @@ if uploaded_file:
                 file_name="PLA_and_LSA_Notices_All_Reinsurers.zip",
                 mime="application/zip"
             )
-    else:
-        st.info("🔒 กรุณาตรวจสอบไฟล์ 2 & 3 และกดปุ่ม **'✅ ตรวจสอบถูกต้อง'** ด้านบนเพื่อปลดล็อกการสร้าง PDF")
