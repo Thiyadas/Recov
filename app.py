@@ -323,19 +323,15 @@ if uploaded_file:
             st.success("🎉 อนุมัติข้อมูลไฟล์ 2 & 3 เรียบร้อยแล้ว! สามารถดำเนินการออก PDF ได้ใน Step ถัดไป")
 
     # =========================================================
-    # Step 3: สร้าง LSA & PLA และแปลงเป็น PDF
+    # Step 3: สร้างเอกสารทั้ง PLA & LSA และแปลงเป็น PDF
     # =========================================================
     if st.session_state.is_approved:
         st.markdown("---")
-        st.header("📌 Step 3: สร้างเอกสาร LSA / PLA และแปลงเป็น PDF")
+        st.header("📌 Step 3: สร้างเอกสาร LSA & PLA และแปลงเป็น PDF")
         
-        # เลือกชนิดเอกสารที่จะออก (LSA หรือ PLA)
-        doc_type = st.radio("📄 เลือกประเภทเอกสารที่ต้องการออก:", ["LSA (Loss Settlement Advice)", "PLA (Preliminary Loss Advice)"], horizontal=True)
-        doc_prefix = "LSA" if "LSA" in doc_type else "PLA"
+        st.info("💡 เมื่ออนุมัติเรียบร้อย ระบบจะทำการสร้างเอกสาร **both PLA และ LSA PDF** ของทุกบริษัทแยกตาม Layer ออกมารวมเป็นไฟล์ ZIP เดียวกัน")
 
-        st.info(f"💡 พร้อมสำหรับการออกเอกสาร **{doc_prefix} PDF** ของทุกบริษัทแยกตาม Layer")
-
-        if st.button(f"🚀 สร้างและดาวน์โหลด PDF {doc_prefix} ของทุกบริษัท (.ZIP)"):
+        if st.button("🚀 สร้างและดาวน์โหลด PDF (PLA + LSA) ของทุกบริษัท (.ZIP)"):
             zip_buffer = io.BytesIO()
             
             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
@@ -349,9 +345,10 @@ if uploaded_file:
                         for rein_key, rein_val in REINSURERS_INFO.items():
                             rein_full_name = rein_val["name"]
                             rein_share_amt = under_xl * rein_val["share"]
+                            safe_rein_name = re.sub(r'[^a-zA-Z0-9]', '_', rein_key)
                             
-                            # เรียกใช้ฟังก์ชันสร้าง PDF (ส่ง doc_type เข้าไปถ้าจำเป็น)
-                            pdf_bytes = generate_pla_pdf(
+                            # 1. สร้าง PLA PDF
+                            pdf_pla_bytes = generate_pla_pdf(
                                 reinsurer_full_name=rein_full_name,
                                 layer_name=layer_name,
                                 gross_loss=tot_gross_all,
@@ -360,18 +357,29 @@ if uploaded_file:
                                 layer_limit=limit,
                                 reinsurer_share_amt=rein_share_amt
                             )
+                            pla_filename = f"PLA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
+                            zip_file.writestr(pla_filename, pdf_pla_bytes)
 
-                            safe_rein_name = re.sub(r'[^a-zA-Z0-9]', '_', rein_key)
-                            pdf_filename = f"{doc_prefix}_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
-                            
-                            zip_file.writestr(pdf_filename, pdf_bytes)
+                            # 2. สร้าง LSA PDF ต่อเนื่องกันทันที
+                            # (หากมีฟังก์ชัน generate_lsa_pdf แยกเฉพาะ ให้เปลี่ยนมาเรียกใช้ตรงนี้)
+                            pdf_lsa_bytes = generate_lsa_pdf(
+                                reinsurer_full_name=rein_full_name,
+                                layer_name=layer_name,
+                                gross_loss=tot_gross_all,
+                                net_loss=tot_net_all,
+                                excess_pt=excess_pt,
+                                layer_limit=limit,
+                                reinsurer_share_amt=rein_share_amt
+                            )
+                            lsa_filename = f"LSA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
+                            zip_file.writestr(lsa_filename, pdf_lsa_bytes)
 
             zip_buffer.seek(0)
-            st.success(f"✅ สร้างไฟล์ PDF ({doc_prefix}) พร้อมโลโก้บริษัทของทุกแห่งสำเร็จแล้ว!")
+            st.success("✅ สร้างไฟล์ PDF (ทั้ง PLA และ LSA) ของทุกบริษัทสำเร็จเรียบร้อยแล้ว!")
             st.download_button(
-                label=f"📦 ดาวน์โหลดไฟล์ PDF {doc_prefix} ทั้งหมด (ZIP File)",
+                label="📦 ดาวน์โหลดเอกสาร PDF ทั้งหมด (PLA + LSA ZIP)",
                 data=zip_buffer.getvalue(),
-                file_name=f"{doc_prefix}_Notices_All_Reinsurers.zip",
+                file_name="PLA_and_LSA_Notices_All_Reinsurers.zip",
                 mime="application/zip"
             )
     else:
