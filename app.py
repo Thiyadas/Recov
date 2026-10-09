@@ -99,6 +99,12 @@ def find_col_by_keywords(df, keywords):
 
 
 def calculate_layer_payout(net_loss, limit, excess_point):
+  """คำนวณยอดเงินที่เข้า Layer ตามหลัก Excess of Loss (XL)
+
+  net_loss: ยอดความเสียหายสุทธิ
+  limit: วงเงินรับเสี่ยงของ Layer
+  excess_point: จุดความเสียหายส่วนแรกก่อนถึง Layer
+  """
   if net_loss <= excess_point:
     return 0.0
   return min(net_loss - excess_point, limit)
@@ -649,7 +655,7 @@ if uploaded_file:
   df_inc_raw.columns = [str(c).strip() for c in df_inc_raw.columns]
 
   # ---------------------------------------------------------
-  # [เพิ่มส่วนประมวลผล] หากไฟล์ส่งมาเฉพาะ Data ให้ทำ Pivot Table ให้อัตโนมัติ
+  # [ประมวลผล] หากไฟล์ส่งมาเฉพาะ Data ให้ทำ Pivot Table ให้อัตโนมัติ
   # ---------------------------------------------------------
   if not has_pivot:
     st.info(
@@ -847,29 +853,36 @@ if uploaded_file:
   tot_sn = float(df_final_file2["Settle Net Loss Retention"].sum())
   tot_rg = float(df_final_file2["Reserve Gross Loss"].sum())
   tot_rn = float(df_final_file2["Reserve Net Loss Retention"].sum())
-  tot_gross_all = tot_sg + tot_rg
-  tot_net_all = tot_sn + tot_rn
+
+  tot_gross_all = tot_sg + tot_rg  # Gross Total Estimated
+  tot_net_all = tot_sn + tot_rn  # Net Loss Total Estimated
 
   # =========================================================
-  # Step 2: สรุปผล ตรวจสอบ และปุ่มแก้ไข / ยืนยันไฟล์ 2 & 3
+  # Step 2: สรุปผล Bordereaux claim & Summary และ ตรวจสอบความถูกต้อง
   # =========================================================
   st.markdown("---")
   st.header(
       " Step 2: สรุปผล  Bordereaux claim & Summary และ ตรวจสอบความถูกต้อง"
   )
 
-  col1, col2 = st.columns(2)
-  col1.metric("Total Gross (Settle + Reserve)", f"{tot_gross_all:,.2f}")
-  col2.metric("Total Net Loss (Settle + Reserve)", f"{tot_net_all:,.2f}")
+  col1, col2, col3, col4 = st.columns(4)
+  col1.metric("Settle Gross", f"{tot_sg:,.2f}")
+  col2.metric("Settle Net (Paid)", f"{tot_sn:,.2f}")
+  col3.metric("Total Estimated Gross", f"{tot_gross_all:,.2f}")
+  col4.metric("Total Estimated Net Loss", f"{tot_net_all:,.2f}")
 
-  # Build Layer Dataframe
-  summary_layer_rows = []
+  # ---------------------------------------------------------
+  # [แก้ไขสำคัญ] สร้างตารางสรุปแบบแยกประเภท PLA XL และ LSA XL
+  # ---------------------------------------------------------
+
+  # 1. สร้างตาราง PLA XL (คิดจาก Net Loss รวมประมาณการ tot_net_all)
+  summary_pla_rows = []
   for layer in LAYERS_CONFIG:
     under_xl = calculate_layer_payout(
         tot_net_all, layer["limit"], layer["excess_point"]
     )
     row = {
-        "Section": "PLA/LSA XL",
+        "Section": "PLA XL",
         "Layer": layer["layer_name"],
         "Gross 100%": tot_gross_all,
         "Net Loss": tot_net_all,
@@ -879,9 +892,35 @@ if uploaded_file:
     }
     for rein_key, rein_val in REINSURERS_INFO.items():
       row[rein_key] = under_xl * rein_val["share"]
-    summary_layer_rows.append(row)
+    summary_pla_rows.append(row)
 
-  df_summary_layer = pd.DataFrame(summary_layer_rows)
+  df_summary_pla = pd.DataFrame(summary_pla_rows)
+
+  # 2. สร้างตาราง LSA XL (คิดจาก Settle Net Loss ที่จ่ายจริง tot_sn)
+  summary_lsa_rows = []
+  for layer in LAYERS_CONFIG:
+    under_xl = calculate_layer_payout(
+        tot_sn, layer["limit"], layer["excess_point"]
+    )
+    row = {
+        "Section": "LSA XL (Cash Call)",
+        "Layer": layer["layer_name"],
+        "Gross 100%": tot_sg,  # Gross Paid
+        "Net Loss": tot_sn,  # Net Paid
+        "Limit": layer["limit"],
+        "Excess Point": layer["excess_point"],
+        "Under XL": under_xl,
+    }
+    for rein_key, rein_val in REINSURERS_INFO.items():
+      row[rein_key] = under_xl * rein_val["share"]
+    summary_lsa_rows.append(row)
+
+  df_summary_lsa = pd.DataFrame(summary_lsa_rows)
+
+  # รวมเป็น Dataframe สรุปรวม
+  df_summary_layer = pd.concat(
+      [df_summary_pla, df_summary_lsa], ignore_index=True
+  )
 
   # 📥 ส่วนดาวน์โหลดไฟล์ 2 & 3 ไปตรวจสอบ
   col_dl1, col_dl2 = st.columns(2)
@@ -980,15 +1019,18 @@ if uploaded_file:
           layer_name = layer["layer_name"]
           limit = layer["limit"]
           excess_pt = layer["excess_point"]
-          under_xl = calculate_layer_payout(tot_net_all, limit, excess_pt)
 
-          if under_xl > 0:
-            for rein_key, rein_val in REINSURERS_INFO.items():
-              rein_full_name = rein_val["name"]
-              rein_share_amt = under_xl * rein_val["share"]
-              safe_rein_name = re.sub(r"[^a-zA-Z0-9]", "_", rein_key)
+          # คำนวณยอดเข้า Layer สำหรับ PLA และ LSA แยกกัน
+          pla_under_xl = calculate_layer_payout(tot_net_all, limit, excess_pt)
+          lsa_under_xl = calculate_layer_payout(tot_sn, limit, excess_pt)
 
-              # 1. สร้าง PLA PDF (Preliminary Loss Advice)
+          for rein_key, rein_val in REINSURERS_INFO.items():
+            rein_full_name = rein_val["name"]
+            safe_rein_name = re.sub(r"[^a-zA-Z0-9]", "_", rein_key)
+
+            # 1. สร้าง PLA PDF (หากมียอดเข้า Layer)
+            if pla_under_xl > 0:
+              pla_share_amt = pla_under_xl * rein_val["share"]
               pdf_pla_bytes = generate_pla_pdf(
                   reinsurer_full_name=rein_full_name,
                   layer_name=layer_name,
@@ -996,28 +1038,25 @@ if uploaded_file:
                   net_loss=tot_net_all,
                   excess_pt=excess_pt,
                   layer_limit=limit,
-                  reinsurer_share_amt=rein_share_amt,
+                  reinsurer_share_amt=pla_share_amt,
               )
               pla_filename = (
                   f"PLA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
               )
               zip_file.writestr(pla_filename, pdf_pla_bytes)
 
-              # 2. สร้าง LSA PDF (Loss Settlement Advice - Cash Call)
-              amount_paid = tot_sg if tot_sg > 0 else tot_gross_all
-              loss_gross_retention = tot_sn if tot_sn > 0 else tot_net_all
-              loss_under_xol = under_xl
-
+            # 2. สร้าง LSA PDF (หากมียอดเข้า Layer)
+            if lsa_under_xl > 0:
+              lsa_share_amt = lsa_under_xl * rein_val["share"]
               pdf_lsa_bytes = generate_lsa_pdf(
                   reinsurer_full_name=rein_full_name,
                   layer_name=layer_name,
-                  amount_paid=amount_paid,
-                  loss_gross_retention=loss_gross_retention,
+                  amount_paid=tot_sg,
+                  loss_gross_retention=tot_sn,
                   excess_pt=excess_pt,
-                  loss_under_xol=loss_under_xol,
-                  reinsurer_share_amt=rein_share_amt,
+                  loss_under_xol=lsa_under_xl,
+                  reinsurer_share_amt=lsa_share_amt,
               )
-
               lsa_filename = (
                   f"LSA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
               )
