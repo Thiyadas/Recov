@@ -255,11 +255,11 @@ if uploaded_file:
     tot_gross_all = tot_sg + tot_rg
     tot_net_all = tot_sn + tot_rn
 
-    # =========================================================
-    # Step 2 & 3: ดาวน์โหลดไฟล์ 2 และ ไฟล์ 3 เพื่อตรวจสอบ
+  # =========================================================
+    # Step 2: สรุปผล ตรวจสอบ และปุ่มแก้ไข / ยืนยันไฟล์ 2 & 3
     # =========================================================
     st.markdown("---")
-    st.header("📌 Step 2: สรุปผลและดาวน์โหลด ไฟล์ 2 & ไฟล์ 3 ไปตรวจสอบ")
+    st.header("📌 Step 2: สรุปผล ตรวจสอบ และแก้ไขไฟล์ 2 & ไฟล์ 3")
     
     col1, col2 = st.columns(2)
     col1.metric("Total Gross (Settle + Reserve)", f"{tot_gross_all:,.2f}")
@@ -269,13 +269,13 @@ if uploaded_file:
     summary_layer_rows = []
     for layer in LAYERS_CONFIG:
         under_xl = calculate_layer_payout(tot_net_all, layer["limit"], layer["excess_point"])
-        row = {"Section": "PLA XL @31/12/2025", "Layer": layer["layer_name"], "Gross 100%": tot_gross_all, "Net Loss": tot_net_all, "Limit": layer["limit"], "Excess Point": layer["excess_point"], "Under XL": under_xl}
+        row = {"Section": "PLA/LSA XL", "Layer": layer["layer_name"], "Gross 100%": tot_gross_all, "Net Loss": tot_net_all, "Limit": layer["limit"], "Excess Point": layer["excess_point"], "Under XL": under_xl}
         for rein_key, rein_val in REINSURERS_INFO.items(): row[rein_key] = under_xl * rein_val["share"]
         summary_layer_rows.append(row)
 
     df_summary_layer = pd.DataFrame(summary_layer_rows)
 
-    # Downloads
+    # 📥 ส่วนดาวน์โหลดไฟล์ 2 & 3 ไปตรวจสอบ
     col_dl1, col_dl2 = st.columns(2)
 
     wb2 = openpyxl.Workbook()
@@ -300,49 +300,79 @@ if uploaded_file:
     wb3.save(buf3)
     col_dl2.download_button("📥 ดาวน์โหลด ไฟล์ 3 (Summary By Layer)", data=buf3.getvalue(), file_name="Summary_Claim_By_Layer_Output.xlsx")
 
-    # =========================================================
-    # Step 4: ออกใบแจ้ง PDF ของทุกบริษัทพร้อมโลโก้
-    # =========================================================
-    st.markdown("---")
-    st.header("📌 Step 3: ออกรายงาน PDF แจ้ง Reinsurer ทุกบริษัท (PDF Notices)")
-    st.info("💡 เมื่อตรวจสอบไฟล์ 2 และ ไฟล์ 3 เรียบร้อยแล้ว สามารถกดปุ่มด้านล่างเพื่อออกใบ PLA PDF ของทุกบริษัทแยกตาม Layer ได้ทันที")
+    # ---------------------------------------------------------
+    # 🎯 ปุ่มแอ็กชัน: แก้ไขไฟนอล หรือ ตรวจสอบถูกต้อง
+    # ---------------------------------------------------------
+    st.subheader("⚙️ การยืนยันความถูกต้องก่อนออกเอกสาร")
+    
+    if "is_approved" not in st.session_state:
+        st.session_state.is_approved = False
 
-    if st.button("🚀 สร้างและดาวน์โหลด PDF ของทุกบริษัท (.ZIP)"):
-        zip_buffer = io.BytesIO()
+    col_btn1, col_btn2 = st.columns(2)
+    
+    with col_btn1:
+        # ปุ่มสำหรับโหมดแก้ไข
+        if st.checkbox("✏️ แก้ไขไฟล์ไฟนอล (หากต้องการปรับแก้ตัวเลขก่อนไปทำ PDF)"):
+            st.warning("⚠️ คุณสามารถอัปโหลดไฟล์ 2 / 3 ที่แก้ไขแล้ว หรือปรับแก้ตารางสรุปด้านล่าง:")
+            df_summary_layer = st.data_editor(df_summary_layer, num_rows="dynamic", key="editor_layer")
+
+    with col_btn2:
+        # ปุ่มอนุมัติและยืนยันข้อมูล
+        if st.button("✅ ตรวจสอบถูกต้อง (Confirm Data)"):
+            st.session_state.is_approved = True
+            st.success("🎉 อนุมัติข้อมูลไฟล์ 2 & 3 เรียบร้อยแล้ว! สามารถดำเนินการออก PDF ได้ใน Step ถัดไป")
+
+    # =========================================================
+    # Step 3: สร้าง LSA & PLA และแปลงเป็น PDF
+    # =========================================================
+    if st.session_state.is_approved:
+        st.markdown("---")
+        st.header("📌 Step 3: สร้างเอกสาร LSA / PLA และแปลงเป็น PDF")
         
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            # วนลูปสร้าง PDF ทีละ Layer และทีละ Reinsurer
-            for layer in LAYERS_CONFIG:
-                layer_name = layer["layer_name"]
-                limit = layer["limit"]
-                excess_pt = layer["excess_point"]
-                under_xl = calculate_layer_payout(tot_net_all, limit, excess_pt)
+        # เลือกชนิดเอกสารที่จะออก (LSA หรือ PLA)
+        doc_type = st.radio("📄 เลือกประเภทเอกสารที่ต้องการออก:", ["LSA (Loss Settlement Advice)", "PLA (Preliminary Loss Advice)"], horizontal=True)
+        doc_prefix = "LSA" if "LSA" in doc_type else "PLA"
 
-                if under_xl > 0:
-                    for rein_key, rein_val in REINSURERS_INFO.items():
-                        rein_full_name = rein_val["name"]
-                        rein_share_amt = under_xl * rein_val["share"]
-                        
-                        pdf_bytes = generate_pla_pdf(
-                            reinsurer_full_name=rein_full_name,
-                            layer_name=layer_name,
-                            gross_loss=tot_gross_all,
-                            net_loss=tot_net_all,
-                            excess_pt=excess_pt,
-                            layer_limit=limit,
-                            reinsurer_share_amt=rein_share_amt
-                        )
+        st.info(f"💡 พร้อมสำหรับการออกเอกสาร **{doc_prefix} PDF** ของทุกบริษัทแยกตาม Layer")
 
-                        safe_rein_name = re.sub(r'[^a-zA-Z0-9]', '_', rein_key)
-                        pdf_filename = f"PLA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
-                        
-                        zip_file.writestr(pdf_filename, pdf_bytes)
+        if st.button(f"🚀 สร้างและดาวน์โหลด PDF {doc_prefix} ของทุกบริษัท (.ZIP)"):
+            zip_buffer = io.BytesIO()
+            
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for layer in LAYERS_CONFIG:
+                    layer_name = layer["layer_name"]
+                    limit = layer["limit"]
+                    excess_pt = layer["excess_point"]
+                    under_xl = calculate_layer_payout(tot_net_all, limit, excess_pt)
 
-        zip_buffer.seek(0)
-        st.success("✅ สร้างไฟล์ PDF พร้อมโลโก้บริษัทของทุกแห่งสำเร็จแล้ว!")
-        st.download_button(
-            label="📦 ดาวน์โหลดไฟล์ PDF ทั้งหมด (ZIP File)",
-            data=zip_buffer.getvalue(),
-            file_name="PLA_Notices_All_Reinsurers.zip",
-            mime="application/zip"
-        )
+                    if under_xl > 0:
+                        for rein_key, rein_val in REINSURERS_INFO.items():
+                            rein_full_name = rein_val["name"]
+                            rein_share_amt = under_xl * rein_val["share"]
+                            
+                            # เรียกใช้ฟังก์ชันสร้าง PDF (ส่ง doc_type เข้าไปถ้าจำเป็น)
+                            pdf_bytes = generate_pla_pdf(
+                                reinsurer_full_name=rein_full_name,
+                                layer_name=layer_name,
+                                gross_loss=tot_gross_all,
+                                net_loss=tot_net_all,
+                                excess_pt=excess_pt,
+                                layer_limit=limit,
+                                reinsurer_share_amt=rein_share_amt
+                            )
+
+                            safe_rein_name = re.sub(r'[^a-zA-Z0-9]', '_', rein_key)
+                            pdf_filename = f"{doc_prefix}_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
+                            
+                            zip_file.writestr(pdf_filename, pdf_bytes)
+
+            zip_buffer.seek(0)
+            st.success(f"✅ สร้างไฟล์ PDF ({doc_prefix}) พร้อมโลโก้บริษัทของทุกแห่งสำเร็จแล้ว!")
+            st.download_button(
+                label=f"📦 ดาวน์โหลดไฟล์ PDF {doc_prefix} ทั้งหมด (ZIP File)",
+                data=zip_buffer.getvalue(),
+                file_name=f"{doc_prefix}_Notices_All_Reinsurers.zip",
+                mime="application/zip"
+            )
+    else:
+        st.info("🔒 กรุณาตรวจสอบไฟล์ 2 & 3 และกดปุ่ม **'✅ ตรวจสอบถูกต้อง'** ด้านบนเพื่อปลดล็อกการสร้าง PDF")
