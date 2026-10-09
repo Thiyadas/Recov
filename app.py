@@ -456,4 +456,31 @@ if uploaded_file:
                                 reinsurer_share_amt=rein_share_amt
                             )
                             pla_filename = f"PLA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
-                            zip_file.writestr(
+                            zip_file.writestr(pla_filename, pdf_pla_bytes)
+
+                            # 2. สร้าง LSA PDF (Loss Settlement Advice - Cash Call)
+                            amount_paid = tot_sg if tot_sg > 0 else tot_gross_all
+                            loss_gross_retention = tot_sn if tot_sn > 0 else tot_net_all
+                            loss_under_xol = under_xl
+
+                            pdf_lsa_bytes = generate_lsa_pdf(
+                                reinsurer_full_name=rein_full_name,
+                                layer_name=layer_name,
+                                amount_paid=amount_paid,
+                                loss_gross_retention=loss_gross_retention,
+                                excess_pt=excess_pt,
+                                loss_under_xol=loss_under_xol,
+                                reinsurer_share_amt=rein_share_amt
+                            )
+
+                            lsa_filename = f"LSA_{layer_name.replace(' ', '_')}_{safe_rein_name}.pdf"
+                            zip_file.writestr(lsa_filename, pdf_lsa_bytes)
+
+            zip_buffer.seek(0)
+            st.success("✅ สร้างไฟล์ PDF (ทั้ง PLA และ LSA) ของทุกบริษัทสำเร็จเรียบร้อยแล้ว!")
+            st.download_button(
+                label="📦 ดาวน์โหลดเอกสาร PDF ทั้งหมด (PLA + LSA ZIP)",
+                data=zip_buffer.getvalue(),
+                file_name="PLA_and_LSA_Notices_All_Reinsurers.zip",
+                mime="application/zip"
+            )
